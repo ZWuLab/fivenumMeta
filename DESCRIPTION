@@ -1,0 +1,44 @@
+Package: fivenumMeta
+Type: Package
+Title: Five-Number Summaries Based Estimation and Inference in Meta-Analysis
+Version: 0.1.0
+Date: 2026-10-17
+Authors@R: c(
+    person("Zheyang", "Wu", email = "zheyangwu@wpi.edu", role = c("aut", "cre"))
+    )
+Description: Tools for meta-analyses of studies that report a median with quartiles
+    or extremes (a five-number summary or part of it) instead of the sample
+    mean and sample standard deviation (SD). The current version focuses on
+    calculating the precision of the mean and standard deviation imputed
+    from such a summary, under normality. It includes the standard deviation
+    factors (SDF) and the inflation factors (IF) of these imputed estimators,
+    exactly, for the best linear unbiased estimators and for the shortcut
+    estimators of Wan, Luo and Shi. It also provides closed-form shortcut
+    formulas for these factors. Supporting functions are included to
+    calculate the imputed mean and SD of a study with their plug-in standard
+    errors, and to pool the studies under the naive and the exact standard
+    errors, for practical meta-analysis. The methods are described by Wu, Shi
+    and Tong (2026) in 'Precision of the imputed mean and standard deviation
+    from a five-number summary' (manuscript). The moments of the normal order
+    statistics come from the 'osmoments' package, described by Wu and Tong
+    (2026) in 'osmoments: Exact Means, Variances and Covariances of Order
+    Statistics in R' (manuscript).
+URL: https://zwulab.github.io/fivenumMeta/, https://github.com/ZWuLab/fivenumMeta
+BugReports: https://github.com/ZWuLab/fivenumMeta/issues
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Depends: R (>= 3.5.0)
+Imports: osmoments,
+    stats
+Suggests: knitr,
+    metafor,
+    metamedian,
+    rmarkdown,
+    testthat (>= 3.0.0)
+Remotes: ZWuLab/osmoments
+VignetteBuilder: knitr
+RoxygenNote: 7.3.3
+Language: en-US
+Config/testthat/edition: 3
+Roxygen: list(markdown = FALSE)

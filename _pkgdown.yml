@@ -1,0 +1,37 @@
+url: https://zwulab.github.io/fivenumMeta/
+template:
+  bootstrap: 5
+reference:
+- title: A study's imputed mean and SD with their standard errors
+  desc: The study-level function for practitioners.
+  contents:
+  - se_imputed
+  - se_imputed_df
+  - se_imputed_diff
+- title: Pooling
+  desc: The pooled estimate under the naive and the exact standard errors, side by side.
+  contents:
+  - pool_imputed
+- title: The exact factors
+  desc: The standard deviation factors and the inflation factors of the imputed mean and SD, under normality.
+  contents:
+  - c_mu
+  - c_sigma
+  - inflation_factors
+  - imputed_moments
+- title: The shortcut formulas
+  desc: Closed forms in the sample size, with the constants as the companion paper prints them.
+  contents:
+  - c_mu_shortcut
+  - c_sigma_shortcut
+- title: Weights and ranks
+  contents:
+  - estimator_weights
+  - scenario_ranks
+- title: Data
+  desc: The six studies of the vitamin D meta-analysis, the mean case of the second vignette.
+  contents:
+  - vitd
+- title: Package
+  contents:
+  - fivenumMeta-package

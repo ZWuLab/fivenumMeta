@@ -1,0 +1,293 @@
+---
+title: "Standard errors for means and SDs imputed from five-number summaries"
+output:
+  rmarkdown::html_vignette:
+    toc: false
+vignette: >
+  %\VignetteIndexEntry{Standard errors for means and SDs imputed from five-number summaries}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(fivenumMeta)
+has_mm <- requireNamespace("metamedian", quietly = TRUE)   # the data
+has_mf <- requireNamespace("metafor", quietly = TRUE)      # the REML fits
+has_meta <- has_mm && has_mf
+num <- function(x, d = 1) {
+  if (has_meta) formatC(x, format = "f", digits = d) else "(not run)"
+}
+```
+
+## The problem, and what this package does
+
+Many studies in a meta-analysis report a median with the quartiles, or with the minimum and
+the maximum, instead of the sample mean and sample standard deviation (SD). The established estimators (Wan,
+Luo and Shi, and the best linear unbiased estimators from the reported values) impute population
+mean and standard deviation parameters from such a summary. In the pooling stage of a meta-analysis, such imputed mean and SD estimators are often treated as the sample mean and
+sample SD, with the naive standard errors of the sample mean and sample SD. However, the imputed estimators are generally less precise than the sample estimators. Thus their variations/uncertainties should be accounted for.
+
+This package computes, under normality, how much less precise. The standard deviation of the
+imputed mean is $C_\mu(n)\,\sigma$ and that of the imputed SD is $C_\sigma(n)\,\sigma$, with
+factors that depend on the sample size, on which values were reported, on the estimator and on
+the definition of the sample quantiles, and not on the data. The package computes the factors
+exactly from the means and covariances of the normal order statistics.
+It returns the plug-in standard errors $C_\mu(n)\,\hat\sigma$ and $C_\sigma(n)\,\hat\sigma$ that
+belong in the weights of a meta-analysis.
+
+```{r factors, echo = FALSE}
+k2 <- inflation_factors(25, "S2")
+k1 <- inflation_factors(25, "S1")
+k3 <- inflation_factors(25, "S3")
+k1b <- inflation_factors(1001, "S1")
+pct <- function(x) formatC(100 * (x - 1), format = "f", digits = 0)
+```
+
+At a sample size of 25, the standard deviation of the imputed mean exceeds $\sigma/\sqrt n$
+by `r pct(k2[["kappa_mu"]])`% when the three quartiles are reported, by
+`r pct(k1[["kappa_mu"]])`% when the minimum, median and maximum are reported, and by
+`r pct(k3[["kappa_mu"]])`% when all five values are. The standard deviation of the
+imputed SD exceeds that of a sample SD by `r pct(k2[["kappa_sigma"]])`%,
+`r pct(k1[["kappa_sigma"]])`% and `r pct(k3[["kappa_sigma"]])`% in the same three cases.
+With only the minimum, median and maximum reported, the excess grows with the sample size, to
+`r pct(k1b[["kappa_mu"]])`% and `r pct(k1b[["kappa_sigma"]])`% at a sample size of 1001.
+
+### The evidence on a public data set
+
+The example data set comes from the meta-analysis of Katzenschlager et al. (2021) of the age
+of COVID-19 patients who died against those who survived, shipped with the `metamedian` package
+as `dat.age`: 51 studies, two groups each, of which 29 report the quartiles and 22 a mean and
+SD. The call below imputes the mean and SD of each group where they are missing, keeps the
+sample ones where they are not, and appends the difference of means (nonsurvivors minus
+survivors) with its standard error under the naive rule and under the exact factors. The
+quartiles are taken under R's default definition (type 7), the package's default. A study that
+states another definition is given its `type`.
+
+```{r example, eval = has_meta}
+d <- se_imputed_diff(
+  data     = metamedian::dat.age,   # one row per study
+  suffixes = c(".g1", ".g2"),       # the two groups' suffixes, group 1 first
+  version  = "blue"                 # the BLUE (default) or "wan_luo_shi"
+)
+str(d)   # the input columns, each group's output columns, the difference
+table(d$scenario.g1)
+range(d$se_mu.g1[d$scenario.g1 == "S2"] / d$se_naive.g1[d$scenario.g1 == "S2"])
+```
+
+The result keeps every input column and appends, for each group with its suffix, the scenario
+read off the row, the imputed or sample mean and SD, and the three standard errors, then the
+difference `yi` with its standard errors `sei_naive` and `sei`. The section "Where to look
+afterwards" defines each column. `pool_imputed()` pools the studies under the naive and the
+exact standard errors side by side, with the common-effect model by default:
+
+```{r pooled, eval = has_meta}
+fit <- pool_imputed(d)
+fit
+```
+
+The estimates, standard errors and interval limits are in years and $I^2$ is in percent. For
+the random-effects model, `metafor` takes the same columns (here with REML):
+
+```{r metafor, eval = has_meta}
+re_naive <- metafor::rma(yi, sei = sei_naive, data = d)   # random effects, REML
+re_exact <- metafor::rma(yi, sei = sei, data = d)
+row <- function(fit) {
+  c(estimate = as.numeric(fit$b), se = fit$se, ci.lb = fit$ci.lb,
+    ci.ub = fit$ci.ub, tau2 = fit$tau2, I2 = fit$I2)
+}
+round(rbind(`naive SE` = row(re_naive), `exact SE` = row(re_exact)), 3)
+```
+
+$\tau^2$ is in years squared.
+
+```{r numbers, echo = FALSE, eval = has_meta}
+imp <- d$scenario.g1 == "S2"
+w_n <- fit$weights$naive; w_e <- fit$weights$exact   # percent
+share_n <- sum(w_n[imp]) / 100; share_e <- sum(w_e[imp]) / 100
+wr <- range(w_e[imp] / w_n[imp])
+r_se <- range(d$se_mu.g1[imp] / d$se_naive.g1[imp])
+ce_se <- fit$fits[, "se"]; names(ce_se) <- rownames(fit$fits)
+# the prose below states these directions, so the build stops if the data no
+# longer support them
+stopifnot(r_se[1] > 1, wr[2] < 1, share_e < share_n,
+          ce_se["exact"] > ce_se["naive"], re_exact$tau2 < re_naive$tau2)
+```
+Three things can be read off the output. First, for every study that reports quartiles, the
+exact standard error of its imputed mean is `r num(100 * (r_se[1] - 1))`% to
+`r num(100 * (r_se[2] - 1))`% larger than the naive one, so such a study carries
+`r num(100 * (1 - wr[2]), 0)`% to `r num(100 * (1 - wr[1]), 0)`% less weight. Under the
+common-effect model, the share of the weight on the quartile studies falls from
+`r num(100 * share_n)`% to `r num(100 * share_e)`%, and the pooled standard error rises
+by `r num(100 * (ce_se["exact"] / ce_se["naive"] - 1))`%. Second, under the random-effects
+model the pooled difference moves by
+`r num(100 * abs(as.numeric(re_exact$b - re_naive$b)) / re_naive$se)`% of its standard
+error, and the standard error itself by `r num(100 * abs(re_exact$se / re_naive$se - 1))`%, because
+the between-study variance dominates the total there ($I^2$ of `r num(re_naive$I2, 0)`%). Third, $\tau^2$ is smaller under the exact standard errors, `r num(re_exact$tau2)`
+against `r num(re_naive$tau2)`, because larger within-study variances leave less of the spread
+of the estimates to be read as heterogeneity.
+
+```{r not-run, echo = FALSE, results = "asis"}
+# printed only when an optional package was missing at build time, so the
+# numbers above read "(not run)"; it names the one that was missing
+if (!has_meta) {
+  miss <- c("metamedian", "metafor")[!c(has_mm, has_mf)]
+  one <- length(miss) == 1
+  cat("The package", if (one) "" else "s", " ", paste(miss, collapse = " and "),
+      if (one) " was" else " were", " not available when this vignette was ",
+      "built, so the example did not run and its numbers read ",
+      "\"(not run)\". Install ", if (one) "it" else "both", " and rebuild the ",
+      "vignette, or run the calls above in a session that has ",
+      if (one) "it" else "them", ".\n", sep = "")
+}
+```
+
+The calls to use: `se_imputed_diff()` for two groups per row, `se_imputed_df()` for one, and
+`pool_imputed()` to pool, with `version = "blue"` (the default). `version = "wan_luo_shi"`
+gives the estimators of Wan, Luo and Shi instead, for comparability with an earlier analysis.
+For a meta-analysis of SDs, `se_imputed_diff(..., measure = "lnVR")` gives the log
+variability ratio of the two groups with its two standard errors, as the second vignette
+shows.
+
+## Setup: the columns and the scenarios
+
+`se_imputed_df()` takes one row per study and reads these columns, each named by an argument
+with the default shown, with a `suffix` appended for data sets that carry two groups side by
+side:
+
+| Argument | Default column | Holds |
+| --- | --- | --- |
+| `n` | `n` | the sample size |
+| `min`, `max` | `min`, `max` | the minimum and the maximum |
+| `q1`, `med`, `q3` | `q1`, `med`, `q3` | the first quartile, the median, the third quartile |
+| `mean`, `sd` | `mean`, `sd` | the sample mean and SD, where a study gives them |
+
+A column that the data set does not have, or an argument set to `NULL`, counts as absent for
+every row, and a missing value counts as absent for that row. The scenario of a row is read
+off the values present: all five give $S_3$; the three quartiles give $S_2$; the minimum,
+median and maximum give $S_1$; a sample mean and SD with no summary give "sample", whose
+standard error is sd / sqrt(n); and a mean with the minimum and the maximum and no SD gives
+"mean_range", where the mean is kept and the SD is imputed from the range. A row with both a
+summary and a sample mean and SD follows `prefer`, which is `"sample"` by default because the
+sample statistics are the direct measurement. A row with none of these, with a missing sample
+size, with values out of order, or whose standard errors would be zero (a sample SD of zero, a
+summary whose values are all equal) gets `NA` in every output column and is named in one
+warning with its reason. The
+function does not stop, so the whole table comes back. Output columns left by an earlier call are replaced.
+
+The factors are computed exactly at every sample size. At $n = 4Q + 1$ the reported
+quartiles are single order statistics. At any other sample size each reported quantile is a
+fixed combination of two neighboring order statistics, by R's default definition (type 7 of
+`quantile()`) unless the argument `type` names another, and the factors there depend on that
+definition. The closed-form shortcut formulas of Appendix A are within half a percent of the
+exact factors at every sample size $n = 4Q + 1$ from 5 to 1001.
+
+## Where to look afterwards
+
+Each group's output columns carry its suffix.
+
+| Column | What it holds |
+| --- | --- |
+| `scenario` | `"S1"`, `"S2"`, `"S3"`, `"sample"` or `"mean_range"`, as read off the row |
+| `mu_hat`, `sigma_hat` | the imputed mean and SD, or the sample ones |
+| `se_naive` | $\hat\sigma/\sqrt n$, the standard error that treats the imputed mean as a sample mean |
+| `se_mu` | $C_\mu(n)\,\hat\sigma$, the exact plug-in standard error of the imputed mean (for a sample mean, sd / sqrt(n)) |
+| `se_sigma` | $C_\sigma(n)\,\hat\sigma$, the exact plug-in standard error of the imputed SD (for a sample SD, the standard deviation of a sample SD under normality with the SD plugged in) |
+| `version_used` | `"blue"`, `"wan_luo_shi"` or `"sample"` |
+| `exact` | `TRUE` for a row with an imputed value, whose factors are computed exactly at its sample size, `NA` for a sample row |
+
+`se_imputed_diff()` adds `yi`, the effect of the study, with `sei_naive` and `sei`, its
+standard errors from the naive and from the exact standard errors, the two groups' variances
+added. By default the effect is the difference of the two means (group 1 minus group 2), and
+`measure = "lnVR"` makes it the log variability ratio, the log of the SD of group 1 over the SD
+of group 2. `pool_imputed()` pools these columns under both standard errors, and
+`metafor::rma(yi, sei = sei)` takes them as they are.
+
+The vignette `two-meta-analyses` reproduces the two meta-analyses of Wu, Shi and Tong (2026): a
+meta-analysis of means in which studies report the median and the range, on the data set
+`vitd` that ships with the package, and a meta-analysis of SDs in which studies report the
+quartiles, on this data set.
+
+## Appendix A. The factors by scenario
+
+`inflation_factors()` returns the ratio of the standard deviation of the imputed mean to
+that of the sample mean, $\kappa_\mu(n) = C_\mu(n)\sqrt n$, and the ratio of the standard
+deviation of the imputed SD to that of the sample SD, $\kappa_\sigma(n)$, for the best linear
+unbiased estimator (BLUE, the default) or the estimators of Wan, Luo and Shi
+(`version = "wan_luo_shi"`).
+
+```{r table}
+grid <- c(5, 25, 101, 1001)
+tab <- sapply(c("S1", "S2", "S3"),
+              function(sc) sapply(grid, function(n) inflation_factors(n, sc)))
+rownames(tab) <- paste0(rep(c("kappa_mu", "kappa_sigma"), length(grid)),
+                        ", n = ", rep(grid, each = 2))
+round(tab, 3)
+```
+
+Under $S_2$ both factors are nearly constant in the sample size. Under $S_1$ both grow with
+it: $\kappa_\mu(n)$ toward its limit $\sqrt{\pi/2}$, about 25% above one, and
+$\kappa_\sigma(n)$ without bound, because $C_\sigma(n)$ decays only like $1/\log n$ there
+while the standard deviation of a sample SD decays like $1/\sqrt n$. Under $S_3$ the extremes help at small sample sizes and the
+factors move toward those of $S_2$ as the sample grows. The closed-form shortcut formulas
+`c_mu_shortcut()` and `c_sigma_shortcut()` give the factors $C_\mu(n)$ and $C_\sigma(n)$
+without the integration, for a reader without this package and for comparison:
+
+```{r shortcut}
+c(exact = c_mu(25, "S2"), shortcut = c_mu_shortcut(25, "S2"))
+c(exact = c_sigma(25, "S2"), shortcut = c_sigma_shortcut(25, "S2"))
+```
+
+## Appendix B. One study at a time
+
+`se_imputed()` takes one study's reported values and sample size.
+
+```{r one}
+se_imputed(c(q1 = 10, med = 12, q3 = 15), n = 25, scenario = "S2")
+```
+
+The imputed mean is the median pulled a little toward the mid-quartile range, the imputed SD
+is a multiple of the interquartile range, and the exact standard error of the mean exceeds the
+naive one by the factor of the table above at $n = 25$ under $S_2$.
+
+## References
+
+Balakrishnan N, Rychtar J, Taylor D, Walter SD (2022). Unified approach to optimal estimation
+of mean and standard deviation from sample summaries. Statistical Methods in Medical Research
+31(11), 2087-2103.
+
+Katzenschlager S, Zimmer AJ, Gottschalk C, Grafeneder J, Schmitz S, Kraker S, Ganslmeier M,
+Muth A, Seitel A, Maier-Hein L, Benedetti A, Larmann J, Weigand MA, McGrath S, Denkinger CM
+(2021). Can we predict the severe course of
+COVID-19, a systematic review and meta-analysis of indicators of clinical outcome? PLOS One
+16, e0255154.
+
+Luo D, Wan X, Liu J, Tong T (2018). Optimally estimating the sample mean from the sample size,
+median, mid-range, and/or mid-quartile range. Statistical Methods in Medical Research 27(6),
+1785-1805.
+
+McGrath S, Katzenschlager S, Zimmer AJ, Seitel A, Steele R, Benedetti A (2023). Standard error
+estimation in meta-analysis of studies reporting medians. Statistical Methods in Medical
+Research 32(2), 373-388.
+
+McGrath S, Zhao X, Ozturk O, Katzenschlager S, Steele R, Benedetti A (2024). metamedian: An R
+package for meta-analyzing studies reporting medians. Research Synthesis Methods 15(2),
+332-346.
+
+Shi J, Luo D, Weng H, Zeng XT, Lin L, Chu H, Tong T (2020). Optimally estimating the sample
+standard deviation from the five-number summary. Research Synthesis Methods 11(5), 641-654.
+
+Viechtbauer W (2010). Conducting meta-analyses in R with the metafor package. Journal of
+Statistical Software 36(3), 1-48.
+
+Wan X, Wang W, Liu J, Tong T (2014). Estimating the sample mean and standard deviation from
+the sample size, median, range and/or interquartile range. BMC Medical Research Methodology
+14, 135.
+
+Wu Z (2026). osmoments: Exact Moments of Order Statistics. R package version 0.1.0.
+
+Wu Z, Shi J, Tong T (2026). Precision of the imputed mean and standard deviation from a
+five-number summary. Manuscript.
+
+Wu Z, Tong T (2026). osmoments: Exact means, variances and covariances of order statistics in
+R. Manuscript.

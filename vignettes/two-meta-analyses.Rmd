@@ -1,0 +1,266 @@
+---
+title: "Two meta-analysis examples: a mean case and a standard deviation (SD) case"
+output:
+  rmarkdown::html_vignette:
+    toc: false
+vignette: >
+  %\VignetteIndexEntry{Two meta-analysis examples: a mean case and a standard deviation (SD) case}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+library(fivenumMeta)
+has_mm <- requireNamespace("metamedian", quietly = TRUE)  # the SD case's data
+has_mf <- requireNamespace("metafor", quietly = TRUE)     # confirms the pooling
+```
+
+```{r helpers, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+# a number for the prose, or "(not run)" where its chunk did not run
+num <- function(x, d = 1, ok = TRUE) {
+  if (ok) formatC(x, format = "f", digits = d) else "(not run)"
+}
+```
+
+```{r headline, include = FALSE}
+# the two cases in brief, for the numbers of the opening paragraph; the sections
+# below show the same calls one at a time
+vd <- se_imputed_diff(vitd, suffixes = c(".controls", ".cases"))
+hd_vd <- pool_imputed(vd)$fits
+hd_vr <- matrix(NA_real_, 2, 4, dimnames = list(c("naive", "exact"),
+                                                c("estimate", "se", "Q", "I2")))
+if (has_mm) {
+  vr <- se_imputed_diff(metamedian::dat.age, measure = "lnVR")
+  hd_vr <- pool_imputed(vr)$fits
+}
+# the rise of the pooled standard error, in percent
+up <- function(f) 100 * (f["exact", "se"] / f["naive", "se"] - 1)
+```
+
+## What the two cases show
+
+This vignette assumes that the reader knows what `se_imputed_diff()` and `se_imputed_df()`
+return: each study's imputed mean and SD with their naive and exact standard errors, in the
+columns that `vignette("fivenumMeta")` describes. Start there if the columns, the scenarios or
+the conventions are new.
+
+Wu, Shi and Tong (2026) illustrate the exact standard errors on two published meta-analyses,
+and this vignette runs both with the package. In a meta-analysis of means in which three of six
+studies report the median and the range, the exact standard errors raise the pooled standard
+error by `r num(up(hd_vd))`%. In a meta-analysis of SDs in which 29 of 51 studies
+report the quartiles, they raise the pooled standard error by `r num(up(hd_vr), 0, has_mm)`%
+and bring $I^2$ from `r num(hd_vr["naive", "I2"], 0, has_mm)`% to
+`r num(hd_vr["exact", "I2"], 0, has_mm)`%. Both data sets are public. The vitamin D
+studies ship with this package as the data set `vitd`, and the age studies come with the
+`metamedian` package as its data set `dat.age`. Every number in this vignette is computed when
+it is built.
+
+Both cases pool with the common-effect model. Study $i$ gives an effect estimate $y_i$ with
+variance $v_i$, and the model weights it by $w_i = 1/v_i$:
+$$
+\hat\theta = \frac{\sum_i w_i y_i}{\sum_i w_i}, \qquad
+\mathrm{SE}(\hat\theta) = \Big(\sum_i w_i\Big)^{-1/2}, \qquad
+\mathcal Q = \sum_i w_i (y_i - \hat\theta)^2, \qquad
+I^2 = \max\Big\{0, \frac{\mathcal Q - (K - 1)}{\mathcal Q}\Big\},
+$$
+where $K$ is the number of studies. $\mathcal Q$ and $I^2$ are the heterogeneity measures of
+Higgins and Thompson (2002).
+
+We run each meta-analysis twice: with the naive standard errors, which treat the imputed mean
+and SD as a sample mean and SD, and with the exact standard errors computed from the exact
+standard deviation factors, which this package takes from the moments of the normal order
+statistics of the `osmoments` package (Wu and Tong, 2026). That is, the two analyses share the
+$y_i$ and differ only in the $v_i$. The function `pool_imputed()` computes the four quantities
+above twice from the output of `se_imputed_diff()`, once with the naive and once with the
+exact standard errors, and prints the two fits side by side. Both cases call it.
+
+## A meta-analysis of means from medians and ranges
+
+The data are the meta-analysis of serum vitamin D (nmol/L) in tuberculosis cases against
+controls of Nnoaham and Clarke (2008), typed from their Table 1 and shipped with this package
+as the data set `vitd`. Three studies report the median, minimum and maximum of each group,
+two a sample mean and SD, and one a mean with the minimum and maximum.
+
+```{r vitd}
+vitd
+```
+
+The study that reports a mean with the range (Sasidharan, India) has no SD. `se_imputed_df()`
+reads such a row as the scenario `mean_range`: the mean is kept as the sample mean, and the SD
+is imputed from the two extremes alone, as the range divided by the expected range of a normal
+sample of that size, which is the best linear unbiased estimator (BLUE) of the SD from the extremes. Its exact standard error
+is the standard deviation of that estimator, from the moments of the two extremes. The
+standard error of this study's mean is then $\hat\sigma/\sqrt n$ under both calculations,
+with the imputed SD plugged in.
+
+The call takes the controls first, so the difference `yi` is controls minus cases, as the
+paper reports it. Each group's factors are taken at its own sample size, exact at the even
+sizes 40 and 38, where the reported median is the average of the two middle values under R's
+default quantile definition. The table lists each study's scenario, its difference with the
+two standard errors, and its weight in percent under each.
+
+```{r vitd-diff}
+d <- se_imputed_diff(vitd, suffixes = c(".controls", ".cases"))
+fit_vd <- pool_imputed(d)
+tab <- data.frame(study = d$study, scenario = d$scenario.cases,
+                  yi = d$yi, se_naive = d$sei_naive, se_exact = d$sei,
+                  w_naive = fit_vd$weights$naive,
+                  w_exact = fit_vd$weights$exact)
+print(tab, digits = 3, row.names = FALSE)
+fit_vd
+```
+
+```{r vitd-numbers, echo = FALSE}
+fits_vd <- fit_vd$fits
+s1 <- d$scenario.cases == "S1"
+ratio_vd <- range(d$sei[s1] / d$sei_naive[s1])
+share_vd <- c(naive = sum(fit_vd$weights$naive[s1]),
+              exact = sum(fit_vd$weights$exact[s1]))
+# the prose below states these directions, so the build stops if the data no
+# longer support them
+stopifnot(ratio_vd[1] > 1, share_vd["exact"] < share_vd["naive"],
+          fits_vd["exact", "se"] > fits_vd["naive", "se"])
+```
+
+Compared with the naive calculation, the exact calculation raises the standard errors of the
+three studies that report the median and the range by `r num(100 * (ratio_vd[1] - 1))`% to
+`r num(100 * (ratio_vd[2] - 1))`%, the inflation of the imputed mean under that
+scenario at these sample sizes. Their share of the weight falls from
+`r num(share_vd["naive"], 0)`% to `r num(share_vd["exact"], 0)`%. The pooled
+difference moves from `r num(fits_vd["naive", "estimate"])` to
+`r num(fits_vd["exact", "estimate"])` nmol/L, and its standard error from
+`r num(fits_vd["naive", "se"], 2)` to `r num(fits_vd["exact", "se"], 2)`, a rise of
+`r num(up(fits_vd))`%, so its confidence interval widens by the same proportion.
+
+## A meta-analysis of SDs from quartiles
+
+A meta-analysis of variability studies whether an outcome is more dispersed in one group than
+in another. Here the effect size is the log variability ratio of Nakagawa et al. (2015), the
+log of the ratio of the two groups' SDs, $y_i = \log(\hat\sigma_{i1}/\hat\sigma_{i2})$. The
+data are the 51 studies of the age of COVID-19 nonsurvivors (group 1) against survivors
+(group 2) of Katzenschlager et al. (2021), shipped with the `metamedian` package as its data
+set `dat.age`: 29 report the three quartiles and 22 a sample mean and SD in both groups. The
+question is whether age is less dispersed among those who died. `measure = "lnVR"` gives
+$y_i$ with its two standard errors in place of the difference of means.
+
+```{r age, eval = has_mm}
+d <- se_imputed_diff(metamedian::dat.age, measure = "lnVR")  # suffixes .g1, .g2
+table(d$scenario.g1)
+fit_vr <- pool_imputed(d)
+fit_vr
+```
+
+The variance of $y_i$ is approximated by the sum of one term per group, to first order in each
+group's SD (the delta method, $\mathrm{Var}(\log X) \approx \mathrm{Var}(X)/(\mathrm{E}X)^2$).
+The naive calculation gives every group the large-sample term of a sample SD of $n$ normal
+observations, $1/\{2(n - 1)\}$. The exact calculation keeps that term for a group that gives
+its sample SD and uses $C^2_\sigma(n)$, the exact variance of the imputed SD in units of
+$\sigma^2$, for a group whose SD is imputed from the quartiles, which the output carries as
+`(se_sigma / sigma_hat)^2`:
+$$
+v_i^{\mathrm{naive}} = \frac{1}{2(n_{i1} - 1)} + \frac{1}{2(n_{i2} - 1)}, \qquad
+v_i^{\mathrm{exact}} = t(n_{i1}) + t(n_{i2}), \qquad
+t(n) = \begin{cases}
+  1/\{2(n - 1)\} & \text{for a sample SD,} \\
+  C^2_\sigma(n) & \text{for an imputed SD.}
+\end{cases}
+$$
+The columns `sei_naive` and `sei` are the square roots of these two variances. Both are
+first-order approximations of the variance of a log, so the intervals below are normal
+approximations. The bias correction of the log ratio of Nakagawa et al. (2015) is not applied,
+as in Wu, Shi and Tong (2026). Both analyses use the plain log ratio.
+
+```{r age-numbers, echo = FALSE, eval = has_mm}
+fits_vr <- fit_vr$fits
+imp <- d$scenario.g1 == "S2"
+# for an imputed group, C_sigma(n)^2 over the naive term 1 / (2 (n - 1))
+over <- function(se, s, n) (se / s)^2 * 2 * (n - 1)
+ratio_vr <- range(c(over(d$se_sigma.g1, d$sigma_hat.g1, d$n.g1)[imp],
+                    over(d$se_sigma.g2, d$sigma_hat.g2, d$n.g2)[imp]))
+share_vr <- c(naive = sum(fit_vr$weights$naive[imp]),
+              exact = sum(fit_vr$weights$exact[imp]))
+sd_ratio <- exp(fits_vr[, "estimate"])
+names(sd_ratio) <- rownames(fits_vr)
+# the prose below states these directions, so the build stops if the data no
+# longer support them
+stopifnot(ratio_vr[1] > 1, share_vr["exact"] < share_vr["naive"],
+          fits_vr["exact", "se"] > fits_vr["naive", "se"],
+          fits_vr["exact", "Q"] < fits_vr["naive", "Q"],
+          fits_vr["exact", "I2"] < fits_vr["naive", "I2"])
+```
+
+For a group whose SD is imputed from the quartiles, $C^2_\sigma(n)$ is
+`r num(ratio_vr[1], 2, has_mm)` to `r num(ratio_vr[2], 2, has_mm)` times the naive term
+$1/\{2(n - 1)\}$. Under the exact variance, the share of the weight on the 29 quartile studies
+falls from `r num(share_vr["naive"], 0, has_mm)`% to `r num(share_vr["exact"], 0, has_mm)`%.
+The pooled log ratio changes little, from `r num(fits_vr["naive", "estimate"], 3, has_mm)`
+to `r num(fits_vr["exact", "estimate"], 3, has_mm)`, so the SD of age among nonsurvivors is
+about `r num(sd_ratio["naive"], 2, has_mm)` times that among survivors either way. Its
+standard error, however, rises by `r num(up(fits_vr), 0, has_mm)`%, from
+`r num(fits_vr["naive", "se"], 4, has_mm)` to `r num(fits_vr["exact", "se"], 4, has_mm)`, and
+its confidence interval widens by the same proportion. $\mathcal Q$ falls from
+`r num(fits_vr["naive", "Q"], 1, has_mm)` to `r num(fits_vr["exact", "Q"], 1, has_mm)`, and
+$I^2$ from `r num(fits_vr["naive", "I2"], 0, has_mm)`% to `r num(fits_vr["exact", "I2"], 0, has_mm)`%.
+Since the two fits share the $y_i$ and differ only in the variances, the fall in
+$\mathcal Q$ and $I^2$ comes from the larger within-study variances alone: the extra spread of
+an imputed SD, which the naive variance leaves out, was counted as heterogeneity.
+
+With the `metafor` package, the exact fit is `rma(yi, sei = sei, data = d, method = "EE")`,
+which returns the same pooled estimate, standard error and $\mathcal Q$, and the naive fit
+takes `sei_naive` in the same way:
+
+```{r metafor, eval = has_mm && has_mf}
+f <- metafor::rma(yi, sei = sei, data = d, method = "EE")
+c(estimate = as.numeric(f$b), se = f$se, Q = f$QE, I2 = f$I2)
+```
+
+```{r not-run, echo = FALSE, results = "asis"}
+# printed only when metamedian was missing at build time, so the numbers of
+# this case read "(not run)"
+if (!has_mm) cat("The package metamedian was not available when this",
+                 "vignette was built, so the SD case did not run. Install it",
+                 "and rebuild the vignette, or run the calls above in a",
+                 "session that has it.\n")
+```
+
+```{r check, include = FALSE}
+# the sections above and the headline chunk agree, and so does metafor
+stopifnot(isTRUE(all.equal(fits_vd, hd_vd)))
+if (has_mm) stopifnot(isTRUE(all.equal(fits_vr, hd_vr)))
+if (has_mm && has_mf) {
+  ours <- unlist(fits_vr["exact", c("estimate", "se", "Q")], use.names = FALSE)
+  stopifnot(isTRUE(all.equal(c(as.numeric(f$b), f$se, f$QE), ours)))
+}
+```
+
+## References
+
+Higgins JPT, Thompson SG (2002). Quantifying heterogeneity in a meta-analysis. Statistics in
+Medicine 21(11), 1539-1558.
+
+Katzenschlager S, Zimmer AJ, Gottschalk C, Grafeneder J, Schmitz S, Kraker S, Ganslmeier M,
+Muth A, Seitel A, Maier-Hein L, Benedetti A, Larmann J, Weigand MA, McGrath S, Denkinger CM
+(2021). Can we predict the severe course of
+COVID-19, a systematic review and meta-analysis of indicators of clinical outcome? PLOS One
+16, e0255154.
+
+McGrath S, Zhao X, Ozturk O, Katzenschlager S, Steele R, Benedetti A (2024). metamedian: An R
+package for meta-analyzing studies reporting medians. Research Synthesis Methods 15(2),
+332-346.
+
+Nakagawa S, Poulin R, Mengersen K, Reinhold K, Engqvist L, Lagisz M, Senior AM (2015).
+Meta-analysis of variation: ecological and evolutionary applications and beyond. Methods in
+Ecology and Evolution 6(2), 143-152.
+
+Nnoaham KE, Clarke A (2008). Low serum vitamin D levels and tuberculosis: a systematic review
+and meta-analysis. International Journal of Epidemiology 37(1), 113-119.
+
+Viechtbauer W (2010). Conducting meta-analyses in R with the metafor package. Journal of
+Statistical Software 36(3), 1-48.
+
+Wu Z, Shi J, Tong T (2026). Precision of the imputed mean and standard deviation from a
+five-number summary. Manuscript.
+
+Wu Z, Tong T (2026). osmoments: Exact means, variances and covariances of order statistics in
+R. Manuscript.

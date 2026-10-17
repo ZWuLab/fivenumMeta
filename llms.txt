@@ -1,0 +1,201 @@
+# fivenumMeta
+
+Many studies in a meta-analysis report a median with the quartiles or
+the extremes instead of a mean and a standard deviation (SD). The
+established estimators (Wan, Luo and Shi, and the best linear unbiased
+estimator, the BLUE, from the reported values) impute a mean and an SD
+from such a summary, and the pooling then treats them as a sample mean
+and SD, with the standard error sd / sqrt(n). An imputed mean is a
+combination of three or five reported values and is less precise than a
+sample mean. Under normality, for the BLUE with the quartiles by R’s
+default definition and sample sizes from 5 to 1001, its standard
+deviation is 6% to 8% larger than sigma / sqrt(n) when the three
+quartiles are reported, and that of the imputed SD is 65% to 68% larger
+than a sample SD’s. When the minimum, median and maximum are reported
+instead, both excesses grow with the sample size: from 3% to 24% for the
+mean, and from 9% to more than threefold for the SD. With all five
+values reported the excesses are smaller, at most 7% for the mean and 6%
+to 51% for the SD.
+
+fivenumMeta computes those standard deviations exactly, from the means
+and covariances of the normal order statistics that the package
+`osmoments` computes, returns the plug-in standard errors that belong in
+the weights of a meta-analysis, and pools the studies under the naive
+and the exact standard errors side by side. It covers the three
+data-reporting scenarios (the minimum, median and maximum, the three
+quartiles, or all five), the BLUE (the default) and the estimators of
+Wan, Luo and Shi, at every sample size, and it gives closed-form
+shortcut formulas for the factors, for a reader without the package and
+for comparison.
+
+## Installation
+
+``` r
+
+# install.packages("remotes")
+remotes::install_github("ZWuLab/osmoments")      # the engine, once it is public
+remotes::install_github("ZWuLab/fivenumMeta")    # this package
+```
+
+## Usage
+
+A meta-analysis data set with two groups per row, in the column layout
+of the data sets that the `metamedian` package ships (`n.g1`, `q1.g1`,
+`med.g1`, `q3.g1`, `mean.g1`, `sd.g1`, and the same with `.g2`). The
+example needs the packages `metamedian` (the data set) and `metafor`
+(the pooling), which fivenumMeta itself does not require:
+
+``` r
+
+library(fivenumMeta)
+d <- se_imputed_diff(
+  data     = metamedian::dat.age,   # one row per study; a study reports quartiles or a mean and SD
+  suffixes = c(".g1", ".g2"),       # the two groups' column suffixes, group 1 first
+  version  = "blue"                 # the estimator version: the BLUE (default) or "wan_luo_shi"
+)
+pool_imputed(d)                                       # the pooled difference under the naive and the exact SEs
+metafor::rma(yi, sei = sei, data = d, method = "EE")  # the same exact fit with metafor
+metafor::rma(yi, sei = sei, data = d)                 # random effects (REML) with metafor, which pool_imputed() does not fit
+```
+
+[`pool_imputed()`](https://zwulab.github.io/fivenumMeta/reference/pool_imputed.md)
+fits the common-effect model by default and the DerSimonian-Laird
+random-effects model with `method = "DL"`. For a meta-analysis of SDs,
+`se_imputed_diff(..., measure = "lnVR")` gives the log variability ratio
+of the two groups with its two standard errors. For one group,
+[`se_imputed_df()`](https://zwulab.github.io/fivenumMeta/reference/se_imputed_df.md)
+appends to each row the imputed mean and SD, the naive standard error,
+the exact plug-in standard errors of the mean and of the SD, and the
+scenario it read off the row, a study’s sample mean and SD kept as they
+are and a mean with the range given the SD imputed from the range. For
+one study,
+`se_imputed(c(q1 = 10, med = 12, q3 = 15), n = 25, scenario = "S2")`.
+The factors themselves are
+[`c_mu()`](https://zwulab.github.io/fivenumMeta/reference/c_mu.md),
+[`c_sigma()`](https://zwulab.github.io/fivenumMeta/reference/c_sigma.md)
+and
+[`inflation_factors()`](https://zwulab.github.io/fivenumMeta/reference/inflation_factors.md),
+and the shortcut formulas
+[`c_mu_shortcut()`](https://zwulab.github.io/fivenumMeta/reference/c_mu_shortcut.md)
+and
+[`c_sigma_shortcut()`](https://zwulab.github.io/fivenumMeta/reference/c_sigma_shortcut.md)
+need no integration.
+
+The factors are exact at every sample size. At n = 4Q + 1 the reported
+quartiles are single order statistics. At any other n each is a fixed
+combination of two neighboring order statistics, by R’s default
+definition (type 7 of
+[`quantile()`](https://rdrr.io/r/stats/quantile.html)) unless the
+argument `type` names another, and the factors there depend on that
+definition.
+
+The vignette,
+[`vignette("fivenumMeta")`](https://zwulab.github.io/fivenumMeta/articles/fivenumMeta.md),
+walks through the example above and explains the columns, the scenarios
+and the convention on the sample size. A second vignette,
+[`vignette("two-meta-analyses")`](https://zwulab.github.io/fivenumMeta/articles/two-meta-analyses.md),
+reproduces the two meta-analyses of Wu, Shi and Tong (2026), one of
+means on the data set `vitd` that ships with the package and one of SDs
+on
+[`metamedian::dat.age`](https://rdrr.io/pkg/metamedian/man/dat.age.html),
+each in three lines.
+
+## The papers
+
+Wu Z, Shi J, Tong T (2026). Precision of the imputed mean and standard
+deviation from a five-number summary. Manuscript.
+
+It defines the factors, gives their limits in the sample size, fits the
+shortcut formulas and reports the checks of the computation.
+`citation("fivenumMeta")` prints this reference. The exact moments of
+the order statistics come from the package `osmoments`, described in:
+
+Wu Z, Tong T (2026). osmoments: Exact means, variances and covariances
+of order statistics in R. Manuscript.
+
+> Developed with AI assistance; see
+> [AI-USE.md](https://zwulab.github.io/fivenumMeta/AI-USE.md).
+
+# Package index
+
+## A study’s imputed mean and SD with their standard errors
+
+The study-level function for practitioners.
+
+- [`se_imputed()`](https://zwulab.github.io/fivenumMeta/reference/se_imputed.md)
+  [`print(`*`<se_imputed>`*`)`](https://zwulab.github.io/fivenumMeta/reference/se_imputed.md)
+  : Imputed mean and SD of one study, with their plug-in standard errors
+- [`se_imputed_df()`](https://zwulab.github.io/fivenumMeta/reference/se_imputed_df.md)
+  : Imputed means and SDs with their standard errors for every study of
+  a data frame
+- [`se_imputed_diff()`](https://zwulab.github.io/fivenumMeta/reference/se_imputed_diff.md)
+  : The effect of two groups per study, with its naive and exact
+  standard errors
+
+## Pooling
+
+The pooled estimate under the naive and the exact standard errors, side
+by side.
+
+- [`pool_imputed()`](https://zwulab.github.io/fivenumMeta/reference/pool_imputed.md)
+  [`print(`*`<pool_imputed>`*`)`](https://zwulab.github.io/fivenumMeta/reference/pool_imputed.md)
+  : Pool the studies under the naive and the exact standard errors, side
+  by side
+
+## The exact factors
+
+The standard deviation factors and the inflation factors of the imputed
+mean and SD, under normality.
+
+- [`c_mu()`](https://zwulab.github.io/fivenumMeta/reference/c_mu.md) :
+  The scalar C_mu(n): standard deviation of the imputed mean in units of
+  sigma
+- [`c_sigma()`](https://zwulab.github.io/fivenumMeta/reference/c_sigma.md)
+  : The scalar C_sigma(n): standard deviation of the imputed SD in units
+  of sigma
+- [`inflation_factors()`](https://zwulab.github.io/fivenumMeta/reference/inflation_factors.md)
+  : Inflation factors of the imputed mean and SD
+- [`imputed_moments()`](https://zwulab.github.io/fivenumMeta/reference/imputed_moments.md)
+  : Second moments of the imputed mean and SD from a five-number summary
+
+## The shortcut formulas
+
+Closed forms in the sample size, with the constants as the companion
+paper prints them.
+
+- [`c_mu_shortcut()`](https://zwulab.github.io/fivenumMeta/reference/c_mu_shortcut.md)
+  : Shortcut formula for C_mu(n)
+- [`c_sigma_shortcut()`](https://zwulab.github.io/fivenumMeta/reference/c_sigma_shortcut.md)
+  : Shortcut formula for C_sigma(n)
+
+## Weights and ranks
+
+- [`estimator_weights()`](https://zwulab.github.io/fivenumMeta/reference/estimator_weights.md)
+  : Weight vectors of the published quantile-based estimators and the
+  BLUE
+- [`scenario_ranks()`](https://zwulab.github.io/fivenumMeta/reference/scenario_ranks.md)
+  : Ranks of the order statistics reported under each scenario
+
+## Data
+
+The six studies of the vitamin D meta-analysis, the mean case of the
+second vignette.
+
+- [`vitd`](https://zwulab.github.io/fivenumMeta/reference/vitd.md) :
+  Serum vitamin D in tuberculosis cases and controls: six studies
+
+## Package
+
+- [`fivenumMeta`](https://zwulab.github.io/fivenumMeta/reference/fivenumMeta-package.md)
+  [`fivenumMeta-package`](https://zwulab.github.io/fivenumMeta/reference/fivenumMeta-package.md)
+  : fivenumMeta: Five-Number Summaries in Meta-Analysis, Imputed Means
+  and SDs with Standard Errors
+
+# Articles
+
+### All vignettes
+
+- [Standard errors for means and SDs imputed from five-number
+  summaries](https://zwulab.github.io/fivenumMeta/articles/fivenumMeta.md):
+- [Two meta-analysis examples: a mean case and a standard deviation (SD)
+  case](https://zwulab.github.io/fivenumMeta/articles/two-meta-analyses.md):
